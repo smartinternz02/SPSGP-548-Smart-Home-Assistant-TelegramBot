@@ -1,0 +1,68 @@
+class TelegramBot(hass.Hass):
+
+    def initialize(self):
+        # Start listening for Telegram updates
+        self.listen_event(self.receive_telegram_text, 'telegram_text')
+        
+        self.time_between_conversations = 60 * 60
+        self.last_conversation = {}
+
+    def receive_telegram_text(self, event_id, payload_event, *args):
+      # Do something with the text
+      user_id = payload_event['user_id']
+      message = payload_event['text']
+
+      # Send greeting message.
+      self.greet_user_if_new_conversation(user_id, payload_event['from_first'])
+
+      if any((
+          'temperature' in message,
+          ('warm' in message or 'cold' in message) and ('house' in message or 'inside' in message or 'outside' in message),
+          ('warm' in message or 'cold' in message) and ('house' in message or 'inside' in message or 'outside' in message),
+      )):
+        # Report the temperature
+        self.send_house_temperature(user_id)
+
+    def greet_user_if_new_conversation(self, user_id, user_name):
+        """Say hi when there is a new conversation"""
+
+        # For new users automatically set the time to zero.
+        if user_id not in self.last_conversation:
+            self.last_conversation[user_id] = 0
+
+        # Compute the time difference in seconds since the last message.
+        time_diff = time.time() - self.last_conversation[user_id]
+
+        if time_diff > self.time_between_conversations:
+            msg = f"Hi {user_name}"
+            # Send a message to the user.
+            self.call_service('telegram_bot/send_message',
+                              target=user_id,
+                              message=msg)
+
+        self.last_conversation[user_id] = time.time()
+
+    def send_house_temperature(self, user_id):
+        """Send information about the temperature in the house"""
+
+        sensors = {
+            'The outside temperature is {} °C.': 'sensor.temp_1', # Replace this with your sensor's entity id
+            'It is {} °C in the livingroom.': 'sensor.temp_2', # Replace this with your sensor's entity id
+            'The temperature of the livingroom is {} °C.': 'sensor.temp_2' # Replace this with your sensor's entity id
+        }
+
+        start_messages = [
+            'Let me see.',
+            'These are the temperatures currently.',
+            'I have read the sensors for you.'
+        ]
+
+        msg = random.choice(start_messages)
+        # Read all sensors.
+        for template, sensor in sensors.items():
+            temp = self.get_state(sensor)
+            msg += ' ' + template.format(temp)
+
+        self.call_service('telegram_bot/send_message',
+                          target=user_id,
+                          message=msg)
